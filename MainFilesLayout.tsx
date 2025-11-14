@@ -1,3 +1,7 @@
+// ============================================
+// File: src/MainFilesLayout.tsx (Improved)
+// ============================================
+
 import React, { useEffect, useState, useMemo, useRef, useCallback } from "react";
 import "bootstrap/dist/css/bootstrap.min.css";
 import { FileSystemArrayList } from "../utils/Files/FileSystemArrayList";
@@ -21,7 +25,7 @@ export const MainFilesLayout: React.FC = () => {
   const [currentPath, setCurrentPath] = useState<FileInfo[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
-  
+
   // Track loaded folders to prevent duplicate API calls
   const loadedFolders = useRef<Set<number>>(new Set());
 
@@ -45,7 +49,7 @@ export const MainFilesLayout: React.FC = () => {
 
         const list = new FileSystemArrayList(files);
         setFileSystemList(list);
-        
+
         // Set initial path to first root folder
         const rootFolders = list.findByParentId(0);
         if (rootFolders.length > 0 && rootFolders[0].type) {
@@ -63,6 +67,26 @@ export const MainFilesLayout: React.FC = () => {
       fetchFileSystemList();
     }
   }, [userId]);
+
+  const requestFile = () => {
+    const rq = async () => {
+      if (!Number(userId)) {
+        console.warn(`This user not found ${userId}`);
+        return;
+      }
+      if (!lastSelectedItem) {
+        console.warn(`Not found file selected`);
+        return;
+      }
+      if (!fileSystemList?.existsFileById(lastSelectedItem)) {
+        console.warn(`This Folder no file.`);
+        return;
+      }
+      console.log(`${typeof Number(userId)} ${lastSelectedItem}`)
+      await RequestFile.requestFile({ userId: Number(userId), parentId: lastSelectedItem });
+    };
+    rq();
+  };
 
   // --- Toggle folder expansion in tree view ---
   const toggleFolder = useCallback((id: number) => {
@@ -90,7 +114,7 @@ export const MainFilesLayout: React.FC = () => {
         userId: Number(userId),
         parentId: folderId,
       });
-      
+
       fileSystemList.addAll(files);
       // Force re-render by creating new instance
       setFileSystemList(new FileSystemArrayList(fileSystemList.getAll()));
@@ -107,7 +131,7 @@ export const MainFilesLayout: React.FC = () => {
       setCurrentPath(path);
       setSelectedItems(new Set([item.id]));
       setLastSelectedItem(item.id);
-      
+
       // Load contents if not already loaded
       loadFolderContents(item.id);
     }
@@ -122,16 +146,16 @@ export const MainFilesLayout: React.FC = () => {
   const handleSelect = useCallback((id: number, isCtrlKey: boolean, isShiftKey: boolean) => {
     setSelectedItems((prev) => {
       const updated = new Set(prev);
-      
+
       if (isShiftKey && lastSelectedItem !== null && currentContents.length > 0) {
         // Range selection
         const lastIndex = currentContents.findIndex(item => item.id === lastSelectedItem);
         const currentIndex = currentContents.findIndex(item => item.id === id);
-        
+
         if (lastIndex !== -1 && currentIndex !== -1) {
           const start = Math.min(lastIndex, currentIndex);
           const end = Math.max(lastIndex, currentIndex);
-          
+
           updated.clear();
           for (let i = start; i <= end; i++) {
             updated.add(currentContents[i].id);
@@ -149,7 +173,7 @@ export const MainFilesLayout: React.FC = () => {
         updated.clear();
         updated.add(id);
       }
-      
+
       setLastSelectedItem(id);
       return updated;
     });
@@ -177,11 +201,11 @@ export const MainFilesLayout: React.FC = () => {
       const item = currentContents.find(i => i.id === Array.from(selectedItems)[0]);
       return item ? `${item.name} - ${FileSystemHelper.formatSize(item.size)}` : undefined;
     }
-    
+
     const totalSize = currentContents
       .filter(i => selectedItems.has(i.id))
       .reduce((sum, item) => sum + item.size, 0);
-    
+
     return `${selectedItems.size} items selected - ${FileSystemHelper.formatSize(totalSize)}`;
   }, [selectedItems, currentContents]);
 
@@ -193,13 +217,13 @@ export const MainFilesLayout: React.FC = () => {
         e.preventDefault();
         setSelectedItems(new Set(currentContents.map(item => item.id)));
       }
-      
+
       // Backspace: Navigate up
       if (e.key === 'Backspace' && currentPath.length > 1) {
         e.preventDefault();
         navigateUp();
       }
-      
+
       // Escape: Clear selection
       if (e.key === 'Escape') {
         setSelectedItems(new Set());
@@ -231,8 +255,8 @@ export const MainFilesLayout: React.FC = () => {
         <div className="alert alert-danger" role="alert">
           <h4 className="alert-heading">Error</h4>
           <p>{error}</p>
-          <button 
-            className="btn btn-primary" 
+          <button
+            className="btn btn-primary"
             onClick={() => window.location.reload()}
           >
             Retry
@@ -245,9 +269,9 @@ export const MainFilesLayout: React.FC = () => {
   // --- Main render ---
   return (
     <div className="container-fluid vh-100 d-flex flex-column p-0">
-      <TitleBar />
-      <AddressBar 
-        currentPath={currentPath} 
+      <TitleBar onRequest={requestFile} />
+      <AddressBar
+        currentPath={currentPath}
         onNavigate={navigateToBreadcrumb}
         onNavigateUp={currentPath.length > 1 ? navigateUp : undefined}
       />
