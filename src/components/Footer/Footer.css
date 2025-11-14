@@ -1,0 +1,11 @@
+/* // ============================================
+// File: src/components/Footer/Footer.css
+// ============================================ */
+.dashboard-footer {
+  margin-top: 40px;
+  padding: 20px 0;
+  border-top: 1px solid #dee2e6;
+  text-align: center;
+  color: #7f8c8d;
+  font-size: 14px;
+}

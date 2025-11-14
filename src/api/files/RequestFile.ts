@@ -3,10 +3,7 @@
 // ============================================
 import axios, { type AxiosInstance } from 'axios';
 // import type { FileNode } from '../../types';
-import type { FileInfo } from '../../types';
-
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
-import type { FilePath } from './../../types';
+import type { FileInfo, FilePath } from '../../types';
 
 class RequestFile {
 
