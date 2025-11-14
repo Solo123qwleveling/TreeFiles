@@ -1,303 +1,219 @@
 // ============================================
-// File: src/MainFilesLayout.tsx (Improved)
+// File: src/components/Sidebar/Sidebar.tsx (Improved & Cleaned)
 // ============================================
 
-import React, { useEffect, useState, useMemo, useRef, useCallback } from "react";
-import "bootstrap/dist/css/bootstrap.min.css";
-import { FileSystemArrayList } from "../utils/Files/FileSystemArrayList";
-import type { FileInfo } from "../types/Files/FileSystemTypes";
-import { FileSystemHelper } from "../utils/Files/FileSystemHelper";
-import { TitleBar } from "../components/Files/TitleBar";
-import { AddressBar } from "../components/Files/AddressBar";
-import { TreeView } from "../components/Files/TreeView";
-import { DetailsView } from "../components/Files/DetailsView";
-import { StatusBar } from "../components/Files/StatusBar";
-import RequestFile from "../api/files/RequestFile";
-import { useParams } from "react-router-dom";
-import type { FilePath } from "../types";
+import React, { useEffect, useState, useCallback } from 'react';
+import { Nav, Spinner, Alert, Badge } from 'react-bootstrap';
+import { NavLink } from 'react-router-dom';
+import {
+  User,
+  UserCheck,
+  UserX,
+  RefreshCw,
+  Home,
+  BarChart2,
+  Users,
+  Settings
+} from 'lucide-react';
+import type { User as UserState } from "../../types";
+import './Sidebar.css';
+import RequestUser from '../../api/users/RequestUser';
 
-export const MainFilesLayout: React.FC = () => {
-  const [fileSystemList, setFileSystemList] = useState<FileSystemArrayList | null>(null);
-  const { userId } = useParams();
-  const [expandedFolders, setExpandedFolders] = useState<Set<number>>(new Set([1]));
-  const [selectedItems, setSelectedItems] = useState<Set<number>>(new Set());
-  const [lastSelectedItem, setLastSelectedItem] = useState<number | null>(null);
-  const [currentPath, setCurrentPath] = useState<FileInfo[]>([]);
+interface SidebarProps {
+  isOpen: boolean;
+  toggleSidebar?: () => void;
+}
+
+export const Sidebar: React.FC<SidebarProps> = ({ isOpen }) => {
+  const [users, setUsers] = useState<UserState[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
-
-  // Track loaded folders to prevent duplicate API calls
-  const loadedFolders = useRef<Set<number>>(new Set());
-
-  // --- Initial file system load ---
-  useEffect(() => {
-    const fetchFileSystemList = async () => {
-      try {
-        setLoading(true);
-        setError(null);
-        const files = await RequestFile.getMainFile(Number(userId));
-
-        // Normalize date fields and mark root folders as loaded
-        files.forEach((f: FileInfo) => {
-          if (f.created && typeof f.created === "string") {
-            f.created = new Date(f.created);
-          }
-          if (!f.parentId) {
-            loadedFolders.current.add(f.id);
-          }
-        });
-
-        const list = new FileSystemArrayList(files);
-        setFileSystemList(list);
-
-        // Set initial path to first root folder
-        const rootFolders = list.findByParentId(0);
-        if (rootFolders.length > 0 && rootFolders[0].type) {
-          setCurrentPath([rootFolders[0]]);
-        }
-      } catch (err) {
-        console.error("Error loading file system:", err);
-        setError("Failed to load file system. Please try again.");
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    if (userId) {
-      fetchFileSystemList();
+  // Static menu items
+  const staticMenuItems = [
+    { id: 'home', icon: Home, label: 'Home', path: '/' },
+    { id: 'analytics', icon: BarChart2, label: 'Analytics', path: '/analytics' },
+    { id: 'users', icon: Users, label: 'Users', path: '/users' },
+    { id: 'settings', icon: Settings, label: 'Settings', path: '/settings' }
+  ];
+  
+  // Fetch users
+  const fetchUsers = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const data = await RequestUser.getUsers();
+      console.log('Fetched users:', data);
+      setUsers(data);
+    } catch (err) {
+      console.error("Failed to fetch users:", err);
+      setError("Failed to load users. Please try again.");
+    } finally {
+      setLoading(false);
     }
-  }, [userId]);
-
-  const requestFile = () => {
-    const rq = async () => {
-      if (!Number(userId)) {
-        console.warn(`This user not found ${userId}`);
-        return;
-      }
-      if (!lastSelectedItem) {
-        console.warn(`Not found file selected`);
-        return;
-      }
-      if (!fileSystemList?.existsFileById(lastSelectedItem)) {
-        console.warn(`This Folder no file.`);
-        return;
-      }
-      console.log(`${typeof Number(userId)} ${lastSelectedItem}`)
-      await RequestFile.requestFile({ userId: Number(userId), parentId: lastSelectedItem });
-    };
-    rq();
-  };
-
-  // --- Toggle folder expansion in tree view ---
-  const toggleFolder = useCallback((id: number) => {
-    setExpandedFolders((prev) => {
-      const updated = new Set(prev);
-      if (updated.has(id)) {
-        updated.delete(id);
-      } else {
-        updated.add(id);
-      }
-      return updated;
-    });
   }, []);
 
-  // --- Load folder contents (only once per folder) ---
-  const loadFolderContents = useCallback(async (folderId: number) => {
-    if (loadedFolders.current.has(folderId) || !userId || !fileSystemList) {
-      return;
-    }
-
-    loadedFolders.current.add(folderId);
-
-    try {
-      const files = await RequestFile.getAllContentsFolder({
-        userId: Number(userId),
-        parentId: folderId,
-      });
-
-      fileSystemList.addAll(files);
-      // Force re-render by creating new instance
-      setFileSystemList(new FileSystemArrayList(fileSystemList.getAll()));
-    } catch (err) {
-      console.error("Error loading folder contents:", err);
-      loadedFolders.current.delete(folderId); // Allow retry on failure
-    }
-  }, [userId, fileSystemList]);
-
-  // --- Navigate to a folder ---
-  const navigateToFolder = useCallback((item: FileInfo) => {
-    if (item.type === true && fileSystemList) {
-      const path = FileSystemHelper.buildPath(fileSystemList.getAll(), item.id);
-      setCurrentPath(path);
-      setSelectedItems(new Set([item.id]));
-      setLastSelectedItem(item.id);
-
-      // Load contents if not already loaded
-      loadFolderContents(item.id);
-    }
-  }, [fileSystemList, loadFolderContents]);
-
-  // --- Navigate to folder by clicking breadcrumb ---
-  const navigateToBreadcrumb = useCallback((item: FileInfo) => {
-    navigateToFolder(item);
-  }, [navigateToFolder]);
-
-  // --- Handle item selection (single/multi-select) ---
-  const handleSelect = useCallback((id: number, isCtrlKey: boolean, isShiftKey: boolean) => {
-    setSelectedItems((prev) => {
-      const updated = new Set(prev);
-
-      if (isShiftKey && lastSelectedItem !== null && currentContents.length > 0) {
-        // Range selection
-        const lastIndex = currentContents.findIndex(item => item.id === lastSelectedItem);
-        const currentIndex = currentContents.findIndex(item => item.id === id);
-
-        if (lastIndex !== -1 && currentIndex !== -1) {
-          const start = Math.min(lastIndex, currentIndex);
-          const end = Math.max(lastIndex, currentIndex);
-
-          updated.clear();
-          for (let i = start; i <= end; i++) {
-            updated.add(currentContents[i].id);
-          }
-        }
-      } else if (isCtrlKey) {
-        // Toggle selection
-        if (updated.has(id)) {
-          updated.delete(id);
-        } else {
-          updated.add(id);
-        }
-      } else {
-        // Single selection
-        updated.clear();
-        updated.add(id);
-      }
-
-      setLastSelectedItem(id);
-      return updated;
-    });
-  }, [lastSelectedItem]);
-
-  // --- Navigate up one level ---
-  const navigateUp = useCallback(() => {
-    if (currentPath.length > 1 && fileSystemList) {
-      const parentFolder = currentPath[currentPath.length - 2];
-      navigateToFolder(parentFolder);
-    }
-  }, [currentPath, fileSystemList, navigateToFolder]);
-
-  // --- Derive current folder contents ---
-  const currentContents = useMemo(() => {
-    if (!fileSystemList || currentPath.length === 0) return [];
-    const currentFolder = currentPath[currentPath.length - 1];
-    return fileSystemList.findByParentId(currentFolder.id);
-  }, [fileSystemList, currentPath]);
-
-  // --- Selected item info for status bar ---
-  const selectedItemInfo = useMemo(() => {
-    if (selectedItems.size === 0) return undefined;
-    if (selectedItems.size === 1) {
-      const item = currentContents.find(i => i.id === Array.from(selectedItems)[0]);
-      return item ? `${item.name} - ${FileSystemHelper.formatSize(item.size)}` : undefined;
-    }
-
-    const totalSize = currentContents
-      .filter(i => selectedItems.has(i.id))
-      .reduce((sum, item) => sum + item.size, 0);
-
-    return `${selectedItems.size} items selected - ${FileSystemHelper.formatSize(totalSize)}`;
-  }, [selectedItems, currentContents]);
-
-  // --- Keyboard shortcuts ---
+  // Initial load
   useEffect(() => {
-    const handleKeyboard = (e: KeyboardEvent) => {
-      // Ctrl/Cmd + A: Select all
-      if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
-        e.preventDefault();
-        setSelectedItems(new Set(currentContents.map(item => item.id)));
-      }
+    fetchUsers();
+  }, [fetchUsers]);
 
-      // Backspace: Navigate up
-      if (e.key === 'Backspace' && currentPath.length > 1) {
-        e.preventDefault();
-        navigateUp();
-      }
+  // Handle user selection
+  const handleUserClick = useCallback((userId: number) => {
+    try {
+      localStorage.setItem('userId', userId.toString());
+    } catch (err) {
+      console.error("Failed to save userId to localStorage:", err);
+    }
+  }, []);
 
-      // Escape: Clear selection
-      if (e.key === 'Escape') {
-        setSelectedItems(new Set());
-      }
-    };
+  // Active/Inactive user counts
+  const activeCount = users.filter(u => u.isState).length;
+  const inactiveCount = users.length - activeCount;
 
-    window.addEventListener('keydown', handleKeyboard);
-    return () => window.removeEventListener('keydown', handleKeyboard);
-  }, [currentContents, currentPath, navigateUp]);
-
-  // --- Loading state ---
-  if (loading) {
-    return (
-      <div className="container-fluid vh-100 d-flex align-items-center justify-content-center">
-        <div className="text-center">
-          <div className="spinner-border text-primary mb-3" role="status">
-            <span className="visually-hidden">Loading...</span>
-          </div>
-          <div className="text-muted">Loading file system...</div>
-        </div>
-      </div>
-    );
-  }
-
-  // --- Error state ---
-  if (error) {
-    return (
-      <div className="container-fluid vh-100 d-flex align-items-center justify-content-center">
-        <div className="alert alert-danger" role="alert">
-          <h4 className="alert-heading">Error</h4>
-          <p>{error}</p>
-          <button
-            className="btn btn-primary"
-            onClick={() => window.location.reload()}
-          >
-            Retry
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  // --- Main render ---
   return (
-    <div className="container-fluid vh-100 d-flex flex-column p-0">
-      <TitleBar onRequest={requestFile} />
-      <AddressBar
-        currentPath={currentPath}
-        onNavigate={navigateToBreadcrumb}
-        onNavigateUp={currentPath.length > 1 ? navigateUp : undefined}
-      />
-
-      <div className="flex-grow-1 d-flex overflow-hidden">
-        <TreeView
-          fileSystemList={fileSystemList!}
-          expandedFolders={expandedFolders}
-          selectedItem={lastSelectedItem}
-          onToggleFolder={toggleFolder}
-          onNavigateToFolder={navigateToFolder}
-          onLoadFolderContents={loadFolderContents}
-        />
-
-        <DetailsView
-          items={currentContents}
-          onNavigate={navigateToFolder}
-          onSelect={handleSelect}
-          selectedItems={selectedItems}
-        />
+    <div className={`sidebar ${isOpen ? 'open' : ''}`}>
+      {/* Header */}
+      <div className="sidebar-header">
+        <h4>Dashboard</h4>
       </div>
 
-      <StatusBar
-        itemCount={currentContents.length}
-        selectedItemInfo={selectedItemInfo}
-      />
+      {/* Main Navigation */}
+      <Nav className="flex-column sidebar-nav">
+        {/* Static Menu Section */}
+         <div className="sidebar-section">
+           <div className="sidebar-section-title">Main Menu</div>
+           {staticMenuItems.map(item => {
+            const Icon = item.icon;
+            return (
+              <NavLink
+                key={item.id}
+                to={item.path}
+                className={({ isActive }) =>
+                  `sidebar-link ${isActive ? 'active' : ''}`
+                }
+              >
+                <Icon size={20} />
+                <span className="ms-3">{item.label}</span>
+              </NavLink>
+            );
+          })}
+        </div>
+
+        {/* Users Section */}
+        <div className="sidebar-section">
+          <div className="sidebar-section-title d-flex align-items-center justify-content-between">
+            <div className="d-flex align-items-center">
+              <User size={16} className="me-2" />
+              <span>Users</span>
+              {users.length > 0 && (
+                <Badge bg="primary" className="ms-2">{users.length}</Badge>
+              )}
+            </div>
+            {!loading && (
+              <RefreshCw
+                size={14}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  fetchUsers();
+                }}
+                className="cursor-pointer opacity-70 hover:opacity-100 transition-opacity"
+                title="Refresh users"
+              />
+            )}
+          </div>
+
+          {/* Loading State */}
+          {loading && (
+            <div className="sidebar-loading">
+              <Spinner animation="border" size="sm" variant="light" />
+              <span className="ms-2">Loading users...</span>
+            </div>
+          )}
+
+          {/* Error State */}
+          {error && !loading && (
+            <Alert
+              variant="danger"
+              className="sidebar-alert"
+              dismissible
+              onClose={() => setError(null)}
+            >
+              <small>{error}</small>
+              <button
+                className="btn btn-sm btn-danger mt-2 w-100"
+                onClick={fetchUsers}
+              >
+                Retry
+              </button>
+            </Alert>
+          )}
+
+          {/* Users List */}
+          {!loading && !error && users.length > 0 && (
+            <>
+              {/* User count summary */}
+              {(activeCount > 0 || inactiveCount > 0) && (
+                <div className="px-3 py-2">
+                  <small className="text-light d-flex justify-content-between">
+                    <span>
+                      <UserCheck size={12} className="text-success me-1" />
+                      {activeCount} active
+                    </span>
+                    {inactiveCount > 0 && (
+                      <span>
+                        <UserX size={12} className="text-danger me-1" />
+                        {inactiveCount} inactive
+                      </span>
+                    )}
+                  </small>
+                </div>
+              )}
+
+              {/* User list */}
+              <div>
+                {users.map(user => (
+                  <NavLink
+                    key={user.id}
+                    to={`/FilesTree/${user.id}`}
+                    className={({ isActive }) =>
+                      `sidebar-link ${isActive ? 'active' : ''}`
+                    }
+                    onClick={() => handleUserClick(user.id)}
+                    title={`View ${user.username}'s files`}
+                  >
+                    {user.isState ? (
+                      <UserCheck size={18} className="text-success" />
+                    ) : (
+                      <UserX size={18} className="text-danger" />
+                    )}
+                    <span className="ms-3 flex-grow-1">{user.username}</span>
+                    {user.isState && (
+                      <Badge bg="success" pill style={{ fontSize: '0.65rem' }}>
+                        Active
+                      </Badge>
+                    )}
+                  </NavLink>
+                ))}
+              </div>
+            </>
+          )}
+
+          {/* Empty State */}
+          {!loading && !error && users.length === 0 && (
+            <div className="sidebar-empty">
+              <User size={32} className="mb-2 opacity-50" />
+              <small>No users found</small>
+              <button
+                className="btn btn-sm btn-outline-light mt-3"
+                onClick={fetchUsers}
+              >
+                <RefreshCw size={14} className="me-2" />
+                Refresh
+              </button>
+            </div>
+          )}
+        </div>
+      </Nav>
     </div>
   );
 };
