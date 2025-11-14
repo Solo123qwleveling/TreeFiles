@@ -7,7 +7,6 @@ export interface FileInfo {
   size: number;
   created: Date;
   type: boolean; // true = folder, false = file
-  isChange: boolean;
-  isState: boolean;
+  hash: number;
   parentId: number;
 }
